@@ -24,7 +24,7 @@
 #include "MobileFFmpegConfig.h"
 
 /** Forward declaration for function defined in fftools_ffmpeg.c */
-int ffmpeg_execute(int argc, char **argv);
+int ffmpeg_execute(int argc, char **argv, void (*preview_callback)(AVFrame *frame), bool preview_mode);
 
 @implementation MobileFFmpeg
 
@@ -46,7 +46,7 @@ extern NSMutableString *lastCommandOutput;
  * @param arguments FFmpeg command options/arguments as string array
  * @return zero on successful execution, 255 on user cancel and non-zero on error
  */
-+ (int)executeWithArguments: (NSArray*)arguments {
++ (int)executeWithArguments: (NSArray*)arguments isPreview: (bool) is_preview {
     lastCommandOutput = [[NSMutableString alloc] init];
 
     char **commandCharPArray = (char **)av_malloc(sizeof(char*) * ([arguments count] + 1));
@@ -64,7 +64,7 @@ extern NSMutableString *lastCommandOutput;
     }
 
     // RUN
-    lastReturnCode = ffmpeg_execute(([arguments count] + 1), commandCharPArray);
+    lastReturnCode = ffmpeg_execute(([arguments count] + 1), commandCharPArray, &parseFrameAndPassImageToCallback, is_preview);
 
     // CLEANUP
     av_free(commandCharPArray[0]);
@@ -81,7 +81,11 @@ extern NSMutableString *lastCommandOutput;
  * @return zero on successful execution, 255 on user cancel and non-zero on error
  */
 + (int)execute: (NSString*)command {
-    return [self executeWithArguments: [self parseArguments: command]];
+    return [self executeWithArguments: [self parseArguments: command isPreview: false]];
+}
+
++ (int)executePreview: (NSString*)command {
+    return [self executeWithArguments: [self parseArguments: command isPreview: true]];
 }
 
 /**
@@ -96,7 +100,7 @@ extern NSMutableString *lastCommandOutput;
 
     // SPLITTING ARGUMENTS
     NSArray* argumentArray = [command componentsSeparatedByString:(delimiter == nil ? @" ": delimiter)];
-    return [self executeWithArguments:argumentArray];
+    return [self executeWithArguments:argumentArray isPreview: false];
 }
 
 /**
@@ -163,6 +167,12 @@ extern NSMutableString *lastCommandOutput;
     }
 
     return argumentArray;
+}
+
+void parseFrameAndPassImageToCallback(AVFrame *frame) {
+    if (_previewCallback != nil) {
+        _previewCallback();
+    }
 }
 
 @end

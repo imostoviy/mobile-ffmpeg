@@ -56,6 +56,7 @@
 #include <limits.h>
 #include <stdatomic.h>
 #include <stdint.h>
+#include <stdbool.h>
 
 #include "mobileffmpeg_exception.h"
 
@@ -153,6 +154,9 @@ static void do_video_stats(OutputStream *ost, int frame_size);
 static BenchmarkTimeStamps get_benchmark_time_stamps(void);
 static int64_t getmaxrss(void);
 static int ifilter_has_all_input_formats(FilterGraph *fg);
+
+static bool is_preview_mode = false;
+static void (*ptr)(AVFrame *frame);
 
 __thread int run_as_daemon  = 0;
 __thread int nb_frames_dup = 0;
@@ -1537,7 +1541,7 @@ static int reap_filters(int flush)
                            "Error in av_buffersink_get_frame_flags(): %s\n", av_err2str(ret));
                 } else if (flush && ret == AVERROR_EOF) {
                     if (av_buffersink_get_type(filter) == AVMEDIA_TYPE_VIDEO)
-                        do_video_out(of, ost, NULL, AV_NOPTS_VALUE);
+                        is_preview_mode ? (*ptr)(NULL) : do_video_out(of, ost, NULL, AV_NOPTS_VALUE);
                 }
                 break;
             }
@@ -1576,7 +1580,7 @@ static int reap_filters(int flush)
                             enc->time_base.num, enc->time_base.den);
                 }
 
-                do_video_out(of, ost, filtered_frame, float_pts);
+                is_preview_mode ? (*ptr)(filtered_frame) : do_video_out(of, ost, filtered_frame, float_pts);
                 break;
             case AVMEDIA_TYPE_AUDIO:
                 if (!(enc->codec->capabilities & AV_CODEC_CAP_PARAM_CHANGE) &&
@@ -5036,8 +5040,11 @@ void cancel_operation()
 
 __thread OptionDef *ffmpeg_options = NULL;
 
-int ffmpeg_execute(int argc, char **argv)
+int ffmpeg_execute(int argc, char **argv, void (*preview_callback)(AVFrame *frame), bool preview_mode)
 {
+    is_preview_mode = preview_mode;
+    ptr = preview_callback;
+
     char _program_name[] = "ffmpeg";
     program_name = (char*)&_program_name;
     program_birth_year = 2000;

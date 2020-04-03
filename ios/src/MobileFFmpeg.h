@@ -29,6 +29,8 @@ extern NSString *const MOBILE_FFMPEG_VERSION;
  */
 @interface MobileFFmpeg : NSObject
 
+@property (nonatomic, copy) void (^previewCallback)(void);
+
 /**
  * Synchronously executes FFmpeg with arguments provided.
  *
@@ -45,6 +47,8 @@ extern NSString *const MOBILE_FFMPEG_VERSION;
  * @return zero on successful execution, 255 on user cancel and non-zero on error
  */
 + (int)execute: (NSString*)command;
+
++ (int)executePreview: (NSString*)command;
 
 /**
  * Synchronously executes FFmpeg command provided. Delimiter parameter is used to split
