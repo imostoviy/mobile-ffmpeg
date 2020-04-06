@@ -23,6 +23,9 @@
 #include "ArchDetect.h"
 #include "MobileFFmpegConfig.h"
 
+#import <objc/runtime.h>
+#import <objc/message.h>
+
 /** Forward declaration for function defined in fftools_ffmpeg.c */
 int ffmpeg_execute(int argc, char **argv, void (*preview_callback)(AVFrame *frame), bool preview_mode);
 
@@ -33,6 +36,17 @@ NSString *const MOBILE_FFMPEG_VERSION = @"4.3.1";
 
 extern int lastReturnCode;
 extern NSMutableString *lastCommandOutput;
+
+
+MobileFFmpeg *thisInstance;
+
+- (id)init {
+    if (self = [super init]) {
+        thisInstance = self;
+    }
+    [MobileFFmpeg initialize];
+    return self;
+}
 
 + (void)initialize {
     [MobileFFmpegConfig class];
@@ -46,7 +60,7 @@ extern NSMutableString *lastCommandOutput;
  * @param arguments FFmpeg command options/arguments as string array
  * @return zero on successful execution, 255 on user cancel and non-zero on error
  */
-+ (int)executeWithArguments: (NSArray*)arguments isPreview: (bool) is_preview {
+- (int)executeWithArguments: (NSArray*)arguments isPreview: (bool) is_preview {
     lastCommandOutput = [[NSMutableString alloc] init];
 
     char **commandCharPArray = (char **)av_malloc(sizeof(char*) * ([arguments count] + 1));
@@ -64,7 +78,7 @@ extern NSMutableString *lastCommandOutput;
     }
 
     // RUN
-    lastReturnCode = ffmpeg_execute(([arguments count] + 1), commandCharPArray, &parseFrameAndPassImageToCallback, is_preview);
+    lastReturnCode = ffmpeg_execute(([arguments count] + 1), commandCharPArray, &cCallbackWrapper, is_preview);
 
     // CLEANUP
     av_free(commandCharPArray[0]);
@@ -80,12 +94,12 @@ extern NSMutableString *lastCommandOutput;
  * @param command FFmpeg command
  * @return zero on successful execution, 255 on user cancel and non-zero on error
  */
-+ (int)execute: (NSString*)command {
-    return [self executeWithArguments: [self parseArguments: command isPreview: false]];
+- (int)execute: (NSString*)command {
+    return [self executeWithArguments: [MobileFFmpeg parseArguments: command] isPreview: false];
 }
 
-+ (int)executePreview: (NSString*)command {
-    return [self executeWithArguments: [self parseArguments: command isPreview: true]];
+- (int)executePreview: (NSString*)command {
+    return [self executeWithArguments: [MobileFFmpeg parseArguments: command] isPreview: true];
 }
 
 /**
@@ -96,7 +110,7 @@ extern NSMutableString *lastCommandOutput;
  * @param delimiter arguments delimiter
  * @return zero on successful execution, 255 on user cancel and non-zero on error
  */
-+ (int)execute: (NSString*)command delimiter:(NSString*)delimiter {
+- (int)execute: (NSString*)command delimiter:(NSString*)delimiter {
 
     // SPLITTING ARGUMENTS
     NSArray* argumentArray = [command componentsSeparatedByString:(delimiter == nil ? @" ": delimiter)];
@@ -108,7 +122,7 @@ extern NSMutableString *lastCommandOutput;
  *
  * This function does not wait for termination to complete and returns immediately.
  */
-+ (void)cancel {
+- (void)cancel {
     cancel_operation();
 }
 
@@ -169,10 +183,78 @@ extern NSMutableString *lastCommandOutput;
     return argumentArray;
 }
 
-void parseFrameAndPassImageToCallback(AVFrame *frame) {
+-(void) parseFrameAndPassPixelBufferRefToCallback: (AVFrame *) frame {
     if (_previewCallback != nil) {
-        _previewCallback();
+        CVPixelBufferRef pbuf = NULL;
+        [self getPixelBuffer:pbuf from:frame];
+        _previewCallback(&pbuf);
     }
+}
+
+-(void)getPixelBuffer:(CVPixelBufferRef *)pbuf from:(AVFrame *)frame {
+    @synchronized (self) {
+        
+        if(!frame || !frame->data[0])
+            return;
+        
+        NSDictionary *options = [NSDictionary dictionaryWithObjectsAndKeys:
+                                 @(frame->linesize[0]), kCVPixelBufferBytesPerRowAlignmentKey,
+                                 [NSNumber numberWithBool:YES], kCVPixelBufferOpenGLESCompatibilityKey,
+                                 [NSDictionary dictionary], kCVPixelBufferIOSurfacePropertiesKey,
+                                 nil];
+        
+        
+        if (frame->linesize[1] != frame->linesize[2]) {
+            return;
+        }
+        
+        size_t srcPlaneSize = frame->linesize[1]*frame->height/2;
+        size_t dstPlaneSize = srcPlaneSize *2;
+        uint8_t *dstPlane = malloc(dstPlaneSize);
+        
+        // interleave Cb and Cr plane
+        for(size_t i = 0; i<srcPlaneSize; i++){
+            dstPlane[2*i  ]=frame->data[1][i];
+            dstPlane[2*i+1]=frame->data[2][i];
+        }
+        
+        
+        int ret = CVPixelBufferCreate(kCFAllocatorDefault,
+                                      frame->width,
+                                      frame->height,
+                                      kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
+                                      (__bridge CFDictionaryRef)(options),
+                                      pbuf);
+        
+        CVPixelBufferLockBaseAddress(*pbuf, 0);
+        
+        size_t bytePerRowY = CVPixelBufferGetBytesPerRowOfPlane(*pbuf, 0);
+        size_t bytesPerRowUV = CVPixelBufferGetBytesPerRowOfPlane(*pbuf, 1);
+        
+        void* base =  CVPixelBufferGetBaseAddressOfPlane(*pbuf, 0);
+        memcpy(base, frame->data[0], bytePerRowY*frame->height);
+        
+        base = CVPixelBufferGetBaseAddressOfPlane(*pbuf, 1);
+        memcpy(base, dstPlane, bytesPerRowUV*frame->height/2);
+        
+        
+        CVPixelBufferUnlockBaseAddress(*pbuf, 0);
+        
+        free(dstPlane);
+        
+        
+        if(ret != kCVReturnSuccess)
+        {
+            NSLog(@"CVPixelBufferCreate Failed");
+        }
+        
+    }
+}
+
+void cCallbackWrapper(AVFrame *frame) {
+    typedef void (*send_type)(id, SEL, AVFrame*);
+    send_type objective_c_func = (send_type)objc_msgSend;
+    objective_c_func(thisInstance, sel_getUid("parseFrameAndPassPixelBufferRefToCallback:"), frame);
 }
 
 @end

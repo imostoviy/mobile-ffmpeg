@@ -19,7 +19,7 @@
 
 #include <string.h>
 #include <stdlib.h>
-#include <Foundation/Foundation.h>
+#include <CoreVideo/CoreVideo.h>
 
 /** Global library version */
 extern NSString *const MOBILE_FFMPEG_VERSION;
@@ -29,7 +29,7 @@ extern NSString *const MOBILE_FFMPEG_VERSION;
  */
 @interface MobileFFmpeg : NSObject
 
-@property (nonatomic, copy) void (^previewCallback)(void);
+@property (nonatomic, copy) void (^previewCallback)(CVPixelBufferRef *);
 
 /**
  * Synchronously executes FFmpeg with arguments provided.
@@ -37,7 +37,7 @@ extern NSString *const MOBILE_FFMPEG_VERSION;
  * @param arguments FFmpeg command options/arguments as string array
  * @return zero on successful execution, 255 on user cancel and non-zero on error
  */
-+ (int)executeWithArguments: (NSArray*)arguments;
+- (int)executeWithArguments: (NSArray*)arguments;
 
 /**
  * Synchronously executes FFmpeg command provided. Space character is used to split command
@@ -46,9 +46,9 @@ extern NSString *const MOBILE_FFMPEG_VERSION;
  * @param command FFmpeg command
  * @return zero on successful execution, 255 on user cancel and non-zero on error
  */
-+ (int)execute: (NSString*)command;
+- (int)execute: (NSString*)command;
 
-+ (int)executePreview: (NSString*)command;
+- (int)executePreview: (NSString*)command;
 
 /**
  * Synchronously executes FFmpeg command provided. Delimiter parameter is used to split
@@ -60,14 +60,14 @@ extern NSString *const MOBILE_FFMPEG_VERSION;
  * using a more advanced method like execute or executeWithArguments
  * @return zero on successful execution, 255 on user cancel and non-zero on error
  */
-+ (int)execute: (NSString*)command delimiter:(NSString*)delimiter __attribute__((deprecated));
+- (int)execute: (NSString*)command delimiter:(NSString*)delimiter __attribute__((deprecated));
 
 /**
  * Cancels an ongoing operation.
  *
  * This function does not wait for termination to complete and returns immediately.
  */
-+ (void)cancel;
+- (void)cancel;
 
 /**
  * Parses the given command into arguments.

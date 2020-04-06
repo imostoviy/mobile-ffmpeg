@@ -5323,7 +5323,7 @@ case $target_os in
         SLIBNAME_WITH_MAJOR='$(SLIBPREF)$(FULLNAME).$(LIBMAJOR)$(SLIBSUF)'
         enabled x86_64 && objformat="macho64" || objformat="macho32"
         enabled_any pic shared x86_64 ||
-            { check_cflags -mdynamic-no-pic && add_asflags -mdynamic-no-pic; }
+            { check_cflags -mdynamic-no-pic; }
         check_headers dispatch/dispatch.h &&
             add_cppflags '-I\$(SRC_PATH)/compat/dispatch_semaphore'
         if test -n "$sysroot"; then
