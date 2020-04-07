@@ -29,7 +29,7 @@ extern NSString *const MOBILE_FFMPEG_VERSION;
  */
 @interface MobileFFmpeg : NSObject
 
-@property (nonatomic, copy) void (^previewCallback)(CVPixelBufferRef *);
+@property (nonatomic, copy) void (^previewCallback)(CVPixelBufferRef);
 
 /**
  * Synchronously executes FFmpeg with arguments provided.
