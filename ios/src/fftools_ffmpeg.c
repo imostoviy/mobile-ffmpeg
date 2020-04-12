@@ -1589,7 +1589,8 @@ static int reap_filters(int flush)
                            "Audio filter graph output is not normalized and encoder does not support parameter changes\n");
                     break;
                 }
-                do_audio_out(of, ost, filtered_frame);
+                if (!is_preview_mode)
+                    do_audio_out(of, ost, filtered_frame);
                 break;
             default:
                 // TODO support subtitle filters
