@@ -185,7 +185,9 @@ MobileFFmpeg *thisInstance;
 
 -(void) parseFrameAndPassPixelBufferRefToCallback: (AVFrame *) frame {
     if (_previewCallback != nil) {
-        _previewCallback([thisInstance getCVPixelBufferRefFromAVFrame:frame]);
+        CVPixelBufferRef *buffer = [thisInstance getCVPixelBufferRefFromAVFrame:frame];
+        _previewCallback(buffer);
+        CVBufferRelease(buffer);
     }
 }
 
