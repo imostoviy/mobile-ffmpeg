@@ -42,41 +42,41 @@ export PKG_CONFIG_LIBDIR="${INSTALL_PKG_CONFIG_DIR}"
 
 TARGET_CPU=""
 TARGET_ARCH=""
-ASM_FLAGS=""
+ARCH_OPTIONS=""
 case ${ARCH} in
     arm-v7a)
         TARGET_CPU="armv7-a"
         TARGET_ARCH="armv7-a"
-        ASM_FLAGS="	--disable-neon --enable-asm --enable-inline-asm"
+        ARCH_OPTIONS="	--disable-neon --enable-asm --enable-inline-asm"
     ;;
     arm-v7a-neon)
         TARGET_CPU="armv7-a"
         TARGET_ARCH="armv7-a"
-        ASM_FLAGS="	--enable-neon --enable-asm --enable-inline-asm"
+        ARCH_OPTIONS="	--enable-neon --enable-asm --enable-inline-asm --build-suffix=_neon"
     ;;
     arm64-v8a)
         TARGET_CPU="armv8-a"
         TARGET_ARCH="aarch64"
-        ASM_FLAGS="	--enable-neon --enable-asm --enable-inline-asm"
+        ARCH_OPTIONS="	--enable-neon --enable-asm --enable-inline-asm"
     ;;
     x86)
         TARGET_CPU="i686"
         TARGET_ARCH="i686"
 
         # asm disabled due to this ticker https://trac.ffmpeg.org/ticket/4928
-        ASM_FLAGS="	--disable-neon --disable-asm --disable-inline-asm"
+        ARCH_OPTIONS="	--disable-neon --disable-asm --disable-inline-asm"
     ;;
     x86-64)
         TARGET_CPU="x86_64"
         TARGET_ARCH="x86_64"
-        ASM_FLAGS="	--disable-neon --enable-asm --enable-inline-asm"
+        ARCH_OPTIONS="	--disable-neon --enable-asm --enable-inline-asm"
     ;;
 esac
 
 CONFIGURE_POSTFIX=""
 HIGH_PRIORITY_INCLUDES=""
 
-for library in {1..46}
+for library in {1..49}
 do
     if [[ ${!library} -eq 1 ]]; then
         ENABLED_LIBRARY=$(get_library_name $((library - 1)))
@@ -163,7 +163,7 @@ do
             libvpx)
                 CFLAGS+=" $(pkg-config --cflags vpx)"
                 LDFLAGS+=" $(pkg-config --libs vpx)"
-                LDFLAGS+=" $(pkg-config --libs --static cpufeatures)"
+                LDFLAGS+=" $(pkg-config --libs cpu-features)"
                 CONFIGURE_POSTFIX+=" --enable-libvpx"
             ;;
             libwebp)
@@ -178,11 +178,8 @@ do
             ;;
             opencore-amr)
                 CFLAGS+=" $(pkg-config --cflags opencore-amrnb)"
-                CFLAGS+=" $(pkg-config --cflags opencore-amrwb)"
                 LDFLAGS+=" $(pkg-config --libs --static opencore-amrnb)"
-                LDFLAGS+=" $(pkg-config --libs --static opencore-amrwb)"
                 CONFIGURE_POSTFIX+=" --enable-libopencore-amrnb"
-                CONFIGURE_POSTFIX+=" --enable-libopencore-amrwb"
             ;;
             openh264)
                 FFMPEG_CFLAGS+=" $(pkg-config --cflags openh264)"
@@ -236,6 +233,11 @@ do
                 LDFLAGS+=" $(pkg-config --libs --static twolame)"
                 CONFIGURE_POSTFIX+=" --enable-libtwolame"
             ;;
+            vo-amrwbenc)
+                CFLAGS+=" $(pkg-config --cflags vo-amrwbenc)"
+                LDFLAGS+=" $(pkg-config --libs --static vo-amrwbenc)"
+                CONFIGURE_POSTFIX+=" --enable-libvo-amrwbenc"
+            ;;
             wavpack)
                 CFLAGS+=" $(pkg-config --cflags wavpack)"
                 LDFLAGS+=" $(pkg-config --libs --static wavpack)"
@@ -285,14 +287,14 @@ do
             ;;
             android-media-codec)
                 CONFIGURE_POSTFIX+=" --enable-mediacodec"
-            ;;
         esac
     else
 
         # THE FOLLOWING LIBRARIES SHOULD BE EXPLICITLY DISABLED TO PREVENT AUTODETECT
+        # NOTE THAT IDS MUST BE +1 OF THE INDEX VALUE
         if [[ ${library} -eq 31 ]]; then
             CONFIGURE_POSTFIX+=" --disable-sdl2"
-        elif [[ ${library} -eq 45 ]]; then
+        elif [[ ${library} -eq 46 ]]; then
             CONFIGURE_POSTFIX+=" --disable-zlib"
         fi
     fi
@@ -322,12 +324,18 @@ if [[ -z ${MOBILE_FFMPEG_DEBUG} ]]; then
         DEBUG_OPTIONS="--disable-debug --disable-lto";
     fi
 else
-    DEBUG_OPTIONS="--enable-debug";
+    DEBUG_OPTIONS="--enable-debug --disable-stripping";
+fi
+
+echo -n -e "\n${LIB_NAME}: "
+
+# DOWNLOAD LIBRARY
+DOWNLOAD_RESULT=$(download_library_source ${LIB_NAME})
+if [[ ${DOWNLOAD_RESULT} -ne 0 ]]; then
+    exit 1
 fi
 
 cd ${BASEDIR}/src/${LIB_NAME} || exit 1
-
-echo -n -e "\n${LIB_NAME}: "
 
 if [[ -z ${NO_WORKSPACE_CLEANUP_ffmpeg} ]]; then
     echo -e "INFO: Cleaning workspace for ${LIB_NAME}" 1>>${BASEDIR}/build.log 2>&1
@@ -341,9 +349,12 @@ export LDFLAGS="${LDFLAGS}"
 # USE HIGHER LIMITS FOR FFMPEG LINKING
 ulimit -n 2048 1>>${BASEDIR}/build.log 2>&1
 
-# Workaround for issue #328
-rm -f ${BASEDIR}/src/${LIB_NAME}/libswscale/aarch64/hscale.S 1>>${BASEDIR}/build.log 2>&1
-cp ${BASEDIR}/tools/make/ffmpeg/libswscale/aarch64/hscale.S ${BASEDIR}/src/${LIB_NAME}/libswscale/aarch64/hscale.S 1>>${BASEDIR}/build.log 2>&1
+########################### CUSTOMIZATIONS #######################
+
+# 1. Use thread local log level
+${SED_INLINE} 's/static int av_log_level/__thread int av_log_level/g' ${BASEDIR}/src/${LIB_NAME}/libavutil/log.c 1>>${BASEDIR}/build.log 2>&1
+
+###################################################################
 
 ./configure \
     --cross-prefix="${BUILD_HOST}-" \
@@ -355,18 +366,17 @@ cp ${BASEDIR}/tools/make/ffmpeg/libswscale/aarch64/hscale.S ${BASEDIR}/src/${LIB
     --cpu="${TARGET_CPU}" \
     --cc="${CC}" \
     --cxx="${CXX}" \
+    --extra-libs="$(pkg-config --libs --static cpu-features)" \
     --target-os=android \
-    ${ASM_FLAGS} \
+    ${ARCH_OPTIONS} \
     --enable-cross-compile \
     --enable-pic \
     --enable-jni \
     --enable-optimizations \
     --enable-swscale \
     --enable-shared \
-    --disable-v4l2-m2m \
-    --disable-outdev=v4l2 \
+    --enable-v4l2-m2m \
     --disable-outdev=fbdev \
-    --disable-indev=v4l2 \
     --disable-indev=fbdev \
     ${SIZE_OPTIONS} \
     --disable-openssl \

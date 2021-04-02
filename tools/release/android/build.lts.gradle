@@ -1,13 +1,14 @@
 apply plugin: 'com.android.library'
 
 android {
-    compileSdkVersion 29
+    compileSdkVersion 30
+    ndkVersion "21.3.6528147"
 
     defaultConfig {
         minSdkVersion 16
-        targetSdkVersion 29
-        versionCode 160431
-        versionName "4.3.1.LTS"
+        targetSdkVersion 30
+        versionCode 160440
+        versionName "4.4.LTS"
         project.archivesBaseName = "mobile-ffmpeg"
         consumerProguardFiles 'proguard-rules.pro'
     }
@@ -39,4 +40,5 @@ task javadoc(type: Javadoc) {
 
 dependencies {
     testImplementation "androidx.test.ext:junit:1.1.1"
+    testImplementation "org.json:json:20190722"
 }

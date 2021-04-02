@@ -51,6 +51,8 @@
 #include "libavformat/avformat.h"
 #include "libswscale/swscale.h"
 
+#include "saf_wrapper.h"
+
 #ifdef _WIN32
 #undef main /* We don't want SDL to override our main() */
 #endif
@@ -334,6 +336,7 @@ typedef struct OptionParseContext {
  * Parse an options group and write results into optctx.
  *
  * @param optctx an app-specific options context. NULL for global options group
+ * @param g option group
  */
 int parse_optgroup(void *optctx, OptionGroup *g);
 
